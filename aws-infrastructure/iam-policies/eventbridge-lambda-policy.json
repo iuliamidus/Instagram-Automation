@@ -1,0 +1,14 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowEventBridgeInvokeLambda",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "events.amazonaws.com"
+            },
+            "Action": "lambda:InvokeFunction",
+            "Resource": "arn:aws:lambda:*:*:function:YOUR_POSTING_LAMBDA_FUNCTION_NAME"
+        }
+    ]
+}
