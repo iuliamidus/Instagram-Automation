@@ -1,0 +1,13 @@
+{
+  "version": "0",
+  "id": "",
+  "detail-type": "Scheduled Event",
+  "source": "aws.events",
+  "account": "<ACCOUNT-NAME>",
+  "time": "2025-08-10T15:00:00Z",
+  "region": "eu-west-2",
+  "detail": {},
+  "resources": [
+    "arn:aws:events:eu-west-2:590184121239:rule/<rule-name>"
+  ]
+}
