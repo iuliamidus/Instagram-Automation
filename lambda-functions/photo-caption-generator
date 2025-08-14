@@ -1,0 +1,130 @@
+import boto3
+import json
+import base64
+import random
+from datetime import datetime, timedelta
+
+def calculate_optimal_time():
+    # Simple version: spread posts throughout the day
+    # You can enhance this with your actual engagement data
+    base_time = datetime.now()
+    optimal_hours = [8, 12, 17, 19, 21]  # Peak engagement times
+    
+    # Random hour from optimal times + random future day
+    random_hour = random.choice(optimal_hours)
+    random_day = random.randint(1, 30)  # Spread over next 30 days
+    
+    scheduled = base_time + timedelta(days=random_day)
+    scheduled = scheduled.replace(hour=random_hour, minute=0, second=0)
+    
+    return scheduled.isoformat()
+
+def lambda_handler(event, context):
+    try:
+        # Initialize clients
+        s3 = boto3.client('s3')
+        bedrock = boto3.client('bedrock-runtime', region_name='eu-west-2')
+        dynamodb = boto3.resource('dynamodb', region_name='eu-west-2')
+        
+        # Get image from S3 event
+        bucket = event['Records'][0]['s3']['bucket']['name']
+        key = event['Records'][0]['s3']['object']['key']
+        
+        print(f"Processing image: {key} from bucket: {bucket}")
+        
+        # Check file size first
+        head_response = s3.head_object(Bucket=bucket, Key=key)
+        file_size = head_response['ContentLength']
+        
+        print(f"Image size: {file_size} bytes")
+        
+        if file_size > 5000000:  # 5MB limit (slightly under to be safe)
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': f'Image too large: {file_size} bytes. Please upload smaller images.'})
+            }
+        
+        # Download and encode image
+        response = s3.get_object(Bucket=bucket, Key=key)
+        image_data = response['Body'].read()
+        image_base64 = base64.b64encode(image_data).decode('utf-8')
+        
+        print(f"Base64 encoded size: {len(image_base64)} characters")
+        
+        # Create prompt for caption generation
+        prompt = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 200,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": image_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": """Analyze this original photograph and create a short, engaging Instagram caption (2-3 sentences max). This is an original photo for a photography account.
+
+                            Requirements:
+                            - Keep it concise and authentic
+                            - Focus on the mood, lighting, or composition
+                            - Include 5-8 relevant hashtags
+                            - Write in a personal, engaging tone
+                            - No need to mention copyright concerns - this is original content
+
+                            Example style: "Golden hour magic hitting the city streets just right ✨ Sometimes the best shots happen when you're just wandering with your camera. #streetphotography #goldenhour #urbanexploration #photography #citylife #lightchaser"
+                            """
+                            }
+                    ]
+                }
+            ]
+        }
+        
+        # Call Bedrock with Claude 3 Sonnet
+        bedrock_response = bedrock.invoke_model(
+            modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+            body=json.dumps(prompt)
+        )
+        
+        # Parse response
+        result = json.loads(bedrock_response['body'].read())
+        caption = result['content'][0]['text']
+        
+        print(f"Generated caption: {caption}")
+        
+        # Calculate optimal posting time
+        scheduled_time = calculate_optimal_time()
+        print(f"Scheduled for: {scheduled_time}")
+        
+        # Store in DynamoDB (you'll need to create this table)
+        table = dynamodb.Table('instagram-post-queue')
+        table.put_item(Item={
+            'image_key': key,
+            'caption': caption,
+            'bucket': bucket,
+            'created_at': datetime.now().isoformat(),
+            'scheduled_time': scheduled_time,
+            'status': 'pending'
+        })
+        
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'image': key,
+                'caption': caption,
+                'scheduled_time': scheduled_time
+            })
+        }
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
