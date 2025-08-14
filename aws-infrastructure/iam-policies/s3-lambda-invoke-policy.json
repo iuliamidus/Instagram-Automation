@@ -1,0 +1,22 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowS3InvokeLambda",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "s3.amazonaws.com"
+            },
+            "Action": "lambda:InvokeFunction",
+            "Resource": "arn:aws:lambda:*:*:function:YOUR_CAPTION_LAMBDA_FUNCTION_NAME",
+            "Condition": {
+                "StringEquals": {
+                    "AWS:SourceAccount": "${aws:PrincipalAccount}"
+                },
+                "ArnLike": {
+                    "AWS:SourceArn": "arn:aws:s3:::YOUR_PHOTOS_BUCKET_NAME"
+                }
+            }
+        }
+    ]
+}
