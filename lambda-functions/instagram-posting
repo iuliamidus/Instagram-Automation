@@ -1,0 +1,126 @@
+import json
+import boto3
+import urllib3
+from datetime import datetime, timedelta
+
+def lambda_handler(event, context):
+    print("=== Lambda function started ===")
+    
+    try:
+        # Initialize AWS clients
+        dynamodb = boto3.resource('dynamodb', region_name='eu-west-2')
+        table = dynamodb.Table('instagram-post-queue')
+        print("DynamoDB connection established")
+        
+        # Your Zapier webhook URL
+        webhook_url = "https://hooks.zapier.com/hooks/....."
+        print(f"Webhook URL configured: {webhook_url[:50]}...")
+        
+        # Get current time and calculate hourly window
+        now = datetime.now()
+        current_hour_start = now.replace(minute=0, second=0, microsecond=0)
+        next_hour_start = current_hour_start + timedelta(hours=1)
+        
+        current_time_str = current_hour_start.isoformat()
+        next_hour_str = next_hour_start.isoformat()
+        
+        print(f"Current time: {now.isoformat()}")
+        print(f"Checking for posts scheduled between {current_time_str} and {next_hour_str}")
+        
+        # First, let's see what's in the table
+        print("Scanning DynamoDB table...")
+        all_items = table.scan()
+        print(f"Total items in table: {len(all_items['Items'])}")
+        
+        for item in all_items['Items']:
+            print(f"Item: {item['image_key']}, Status: {item['status']}, Scheduled: {item['scheduled_time']}")
+        
+        # Query for posts scheduled in this hour
+        print("Filtering for posts scheduled in current hour...")
+        response = table.scan(
+            FilterExpression='#status = :status AND scheduled_time >= :start_time AND scheduled_time < :end_time',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={
+                ':status': 'pending',
+                ':start_time': current_time_str,
+                ':end_time': next_hour_str
+            }
+        )
+        
+        posts_found = len(response['Items'])
+        print(f"Found {posts_found} posts scheduled for this hour")
+        
+        if posts_found == 0:
+            print("No posts scheduled for this hour")
+            return {
+                'statusCode': 200,
+                'body': json.dumps({
+                    'message': 'No posts scheduled for this hour',
+                    'checked_window': f"{current_time_str} to {next_hour_str}",
+                    'posts_sent': 0
+                })
+            }
+        
+        # Process posts scheduled for this hour
+        posts_sent = 0
+        http = urllib3.PoolManager()
+        
+        for item in response['Items']:
+            print(f"Processing: {item['image_key']} scheduled for {item['scheduled_time']}")
+            
+            payload = {
+                'image_key': item['image_key'],
+                'caption': item['caption'],
+                'bucket': item['bucket'],
+                's3_url': f"https://{item['bucket']}.s3.amazonaws.com/{item['image_key']}",
+                'created_at': item['created_at'],
+                'scheduled_time': item['scheduled_time'],
+                'posted_at': now.isoformat()
+            }
+            
+            print(f"Sending payload for: {item['image_key']}")
+            
+            webhook_response = http.request(
+                'POST',
+                webhook_url,
+                body=json.dumps(payload),
+                headers={'Content-Type': 'application/json'}
+            )
+            
+            print(f"Webhook response status: {webhook_response.status}")
+            
+            if webhook_response.status == 200:
+                print(f"Successfully sent {item['image_key']} to Zapier")
+                
+                # TEMPORARILY COMMENTED OUT - we'll fix this after testing
+                # table.update_item(
+                #     Key={'image_key': item['image_key']},
+                #     UpdateExpression='SET #status = :status, sent_to_zapier_at = :sent_time',
+                #     ExpressionAttributeNames={'#status': 'status'},
+                #     ExpressionAttributeValues={
+                #         ':status': 'sent_to_zapier',
+                #         ':sent_time': now.isoformat()
+                #     }
+                # )
+                posts_sent += 1
+            else:
+                print(f"Failed to send {item['image_key']} to Zapier")
+        
+        print(f"=== Finished: Sent {posts_sent} posts ===")
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': f'Sent {posts_sent} posts to Zapier',
+                'posts_sent': posts_sent,
+                'checked_window': f"{current_time_str} to {next_hour_str}"
+            })
+        }
+        
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
