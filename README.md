@@ -20,10 +20,7 @@ Transform your photography workflow with intelligent automation that generates e
 
 ## 📖 Complete Tutorial
 
-**📚 [Read the full step-by-step guide on Medium](your-medium-link)**
+**📚 [Read the full step-by-step guide on Medium]([your-medium-link](https://medium.com/@iulia.midus/how-to-build-an-ai-powered-automated-instagram-posting-system-with-aws-and-zapier-139b3f005378))**
 
 Learn how to build this system from scratch with detailed explanations, code examples, and troubleshooting tips.
 
-## 🏗️ Architecture
-
-![Architecture Diagram](docs/architecture-diagram.svg)
